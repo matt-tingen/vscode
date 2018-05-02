@@ -83,8 +83,8 @@ export const openWindowCommand = (accessor: ServicesAccessor, paths: string[], f
 	windowsService.openWindow(paths, { forceNewWindow });
 };
 
-function save(resource: URI, isSaveAs: boolean, editorService: IWorkbenchEditorService, fileService: IFileService, untitledEditorService: IUntitledEditorService,
-	textFileService: ITextFileService, editorGroupService: IEditorGroupService, saveOptions: ISaveOptions = {}): TPromise<any> {
+function save(resource: URI, isSaveAs: boolean, saveOptions: ISaveOptions, editorService: IWorkbenchEditorService, fileService: IFileService, untitledEditorService: IUntitledEditorService,
+	textFileService: ITextFileService, editorGroupService: IEditorGroupService): TPromise<any> {
 
 	if (resource && (fileService.canHandleResource(resource) || resource.scheme === Schemas.untitled)) {
 
@@ -505,7 +505,7 @@ KeybindingsRegistry.registerCommandAndKeybindingRule({
 	handler: (accessor, resourceOrObject: ResourceOrObject) => {
 		const resource: URI = getResourceForSave(accessor, resourceOrObject)
 
-		return save(resource, true, accessor.get(IWorkbenchEditorService), accessor.get(IFileService), accessor.get(IUntitledEditorService), accessor.get(ITextFileService), accessor.get(IEditorGroupService));
+		return save(resource, true, {}, accessor.get(IWorkbenchEditorService), accessor.get(IFileService), accessor.get(IUntitledEditorService), accessor.get(ITextFileService), accessor.get(IEditorGroupService));
 	}
 });
 
@@ -520,7 +520,7 @@ KeybindingsRegistry.registerCommandAndKeybindingRule({
 
 		if (resources.length === 1) {
 			// If only one resource is selected explictly call save since the behavior is a bit different than save all #41841
-			return save(resources[0], false, editorService, accessor.get(IFileService), accessor.get(IUntitledEditorService), accessor.get(ITextFileService), accessor.get(IEditorGroupService));
+			return save(resources[0], false, {}, editorService, accessor.get(IFileService), accessor.get(IUntitledEditorService), accessor.get(ITextFileService), accessor.get(IEditorGroupService));
 		}
 		return saveAll(resources, editorService, accessor.get(IUntitledEditorService), accessor.get(ITextFileService), accessor.get(IEditorGroupService));
 	}
@@ -537,9 +537,9 @@ CommandsRegistry.registerCommand({
 	id: SAVE_WITHOUT_PARTICIPANTS_COMMAND_ID,
 	handler: (accessor, resourceOrObject: ResourceOrObject) => {
 		const resource: URI = getResourceForSave(accessor, resourceOrObject)
-		const saveOptions: ISaveOptions =  { skipSaveParticipants: true };
+		const options: ISaveOptions =  { skipSaveParticipants: true };
 
-		return save(resource, false, accessor.get(IWorkbenchEditorService), accessor.get(IFileService), accessor.get(IUntitledEditorService), accessor.get(ITextFileService), accessor.get(IEditorGroupService), saveOptions);
+		return save(resource, false, options, accessor.get(IWorkbenchEditorService), accessor.get(IFileService), accessor.get(IUntitledEditorService), accessor.get(ITextFileService), accessor.get(IEditorGroupService));
 	}
 });
 
