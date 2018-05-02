@@ -20,7 +20,7 @@ import { ExplorerFocusCondition, FileOnDiskContentProvider, VIEWLET_ID } from 'v
 import { ExplorerViewlet } from 'vs/workbench/parts/files/electron-browser/explorerViewlet';
 import { IClipboardService } from 'vs/platform/clipboard/common/clipboardService';
 import { IEditorGroupService } from 'vs/workbench/services/group/common/groupService';
-import { ITextFileService } from 'vs/workbench/services/textfile/common/textfiles';
+import { ITextFileService, ISaveOptions } from 'vs/workbench/services/textfile/common/textfiles';
 import { toErrorMessage } from 'vs/base/common/errorMessage';
 import { IListService } from 'vs/platform/list/browser/listService';
 import { Tree } from 'vs/base/parts/tree/browser/treeImpl';
@@ -69,6 +69,8 @@ export const SAVE_ALL_IN_GROUP_COMMAND_ID = 'workbench.files.action.saveAllInGro
 
 export const SAVE_FILES_COMMAND_ID = 'workbench.action.files.saveFiles';
 
+export const SAVE_WITHOUT_PARTICIPANTS_COMMAND_ID = 'workbench.action.files.saveWithoutParticipants'
+
 export const OpenEditorsGroupContext = new RawContextKey<boolean>('groupFocusedInOpenEditors', false);
 export const DirtyEditorContext = new RawContextKey<boolean>('dirtyEditor', false);
 export const ResourceSelectedForCompareContext = new RawContextKey<boolean>('resourceSelectedForCompare', false);
@@ -82,7 +84,7 @@ export const openWindowCommand = (accessor: ServicesAccessor, paths: string[], f
 };
 
 function save(resource: URI, isSaveAs: boolean, editorService: IWorkbenchEditorService, fileService: IFileService, untitledEditorService: IUntitledEditorService,
-	textFileService: ITextFileService, editorGroupService: IEditorGroupService): TPromise<any> {
+	textFileService: ITextFileService, editorGroupService: IEditorGroupService, saveOptions: ISaveOptions = {}): TPromise<any> {
 
 	if (resource && (fileService.canHandleResource(resource) || resource.scheme === Schemas.untitled)) {
 
@@ -109,7 +111,7 @@ function save(resource: URI, isSaveAs: boolean, editorService: IWorkbenchEditorS
 			// Special case: an untitled file with associated path gets saved directly unless "saveAs" is true
 			let savePromise: TPromise<URI>;
 			if (!isSaveAs && resource.scheme === Schemas.untitled && untitledEditorService.hasAssociatedFilePath(resource)) {
-				savePromise = textFileService.save(resource).then((result) => {
+				savePromise = textFileService.save(resource, saveOptions).then((result) => {
 					if (result) {
 						return URI.file(resource.fsPath);
 					}
@@ -120,7 +122,7 @@ function save(resource: URI, isSaveAs: boolean, editorService: IWorkbenchEditorS
 
 			// Otherwise, really "Save As..."
 			else {
-				savePromise = textFileService.saveAs(resource);
+				savePromise = textFileService.saveAs(resource, null, saveOptions);
 			}
 
 			return savePromise.then((target) => {
@@ -152,7 +154,7 @@ function save(resource: URI, isSaveAs: boolean, editorService: IWorkbenchEditorS
 		}
 
 		// Just save
-		return textFileService.save(resource, { force: true /* force a change to the file to trigger external watchers if any */ });
+		return textFileService.save(resource, { ...saveOptions, force: true /* force a change to the file to trigger external watchers if any */ });
 	}
 
 	return TPromise.as(false);
@@ -483,21 +485,27 @@ CommandsRegistry.registerCommand({
 	}
 });
 
+type ResourceOrObject = URI | object | { from: string };
+
+function getResourceForSave(accessor: ServicesAccessor , resourceOrObject: URI | object | { from: string }): URI {
+	const editorService = accessor.get(IWorkbenchEditorService);
+
+	if (resourceOrObject && 'from' in resourceOrObject && resourceOrObject.from === 'menu') {
+		return toResource(editorService.getActiveEditorInput());
+	} else {
+		return getResourceForCommand(resourceOrObject, accessor.get(IListService), editorService);
+	}
+}
+
 KeybindingsRegistry.registerCommandAndKeybindingRule({
 	id: SAVE_FILE_AS_COMMAND_ID,
 	weight: KeybindingsRegistry.WEIGHT.workbenchContrib(),
 	when: undefined,
 	primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KEY_S,
-	handler: (accessor, resourceOrObject: URI | object | { from: string }) => {
-		const editorService = accessor.get(IWorkbenchEditorService);
-		let resource: URI = undefined;
-		if (resourceOrObject && 'from' in resourceOrObject && resourceOrObject.from === 'menu') {
-			resource = toResource(editorService.getActiveEditorInput());
-		} else {
-			resource = getResourceForCommand(resourceOrObject, accessor.get(IListService), editorService);
-		}
+	handler: (accessor, resourceOrObject: ResourceOrObject) => {
+		const resource: URI = getResourceForSave(accessor, resourceOrObject)
 
-		return save(resource, true, editorService, accessor.get(IFileService), accessor.get(IUntitledEditorService), accessor.get(ITextFileService), accessor.get(IEditorGroupService));
+		return save(resource, true, accessor.get(IWorkbenchEditorService), accessor.get(IFileService), accessor.get(IUntitledEditorService), accessor.get(ITextFileService), accessor.get(IEditorGroupService));
 	}
 });
 
@@ -522,6 +530,16 @@ CommandsRegistry.registerCommand({
 	id: SAVE_ALL_COMMAND_ID,
 	handler: (accessor) => {
 		return saveAll(true, accessor.get(IWorkbenchEditorService), accessor.get(IUntitledEditorService), accessor.get(ITextFileService), accessor.get(IEditorGroupService));
+	}
+});
+
+CommandsRegistry.registerCommand({
+	id: SAVE_WITHOUT_PARTICIPANTS_COMMAND_ID,
+	handler: (accessor, resourceOrObject: ResourceOrObject) => {
+		const resource: URI = getResourceForSave(accessor, resourceOrObject)
+		const saveOptions: ISaveOptions =  { skipSaveParticipants: true };
+
+		return save(resource, false, accessor.get(IWorkbenchEditorService), accessor.get(IFileService), accessor.get(IUntitledEditorService), accessor.get(ITextFileService), accessor.get(IEditorGroupService), saveOptions);
 	}
 });
 
